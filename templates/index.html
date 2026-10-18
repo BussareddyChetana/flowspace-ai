@@ -1,0 +1,227 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f5ff">
+  <title>FlowSpace AI — Your Personal Space</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-icon">✦</span>
+      <span>FlowSpace<span class="brand-ai">AI</span></span>
+    </a>
+    <span class="privacy-pill"><span class="privacy-dot"></span> No chat history</span>
+  </header>
+
+  <main class="shell">
+
+    <!-- FIRST SCREEN: CHOOSE YOUR MODE -->
+    <section id="welcomeScreen" class="welcome-screen">
+      <div class="welcome-badge">
+        <span>✦</span> YOUR PERSONAL AI SPACE
+      </div>
+
+      <h1>
+        Make room for<br>
+        <span class="gradient-text">a better you.</span>
+      </h1>
+
+      <p class="welcome-description">
+        Sometimes you need a plan. Sometimes you just need to let it out.
+        Whatever it is, start here.
+      </p>
+
+      <div class="mode-cards">
+
+        <button type="button" class="mode-card plan-choice" id="choosePlan">
+          <span class="mode-icon">✳</span>
+          <span class="mode-label">GET ORGANIZED</span>
+          <span class="mode-title">Plan my day</span>
+          <span class="mode-description">
+            Turn your messy thoughts, tasks and deadlines into a clear,
+            prioritized plan you can actually follow.
+          </span>
+          <span class="mode-action">
+            Let's plan <span class="action-arrow">↗</span>
+          </span>
+          <span class="decor-circle"></span>
+        </button>
+
+        <button type="button" class="mode-card reflect-choice" id="chooseReflect">
+          <span class="mode-icon">♡</span>
+          <span class="mode-label">TAKE A BREATH</span>
+          <span class="mode-title">Vent &amp; Reflect</span>
+          <span class="mode-description">
+            Get things off your chest, understand your feelings and find
+            one gentle next step without judgment.
+          </span>
+          <span class="mode-action">
+            Let's talk <span class="action-arrow">↗</span>
+          </span>
+          <span class="decor-circle"></span>
+        </button>
+
+      </div>
+
+      <div class="welcome-footer">
+        <span>♡ No pressure.</span>
+        <span>✦ No judgment.</span>
+        <span>☁ Just one step at a time.</span>
+      </div>
+
+      <div class="welcome-note">
+        <span>🔒</span>
+        <span>Your requests are not saved in an app history. Your input is sent
+          to Google Gemini to generate a response.</span>
+      </div>
+    </section>
+
+    <!-- SECOND SCREEN: THE CHOSEN WORKSPACE -->
+    <section id="appScreen" class="app-screen hidden">
+
+      <button type="button" id="backHome" class="back-button">
+        ← Back to choices
+      </button>
+
+      <div class="workspace-heading">
+        <span id="modeEyebrow" class="eyebrow">GET ORGANIZED</span>
+        <h1 id="modeHeading">Let's make a plan.</h1>
+        <p id="modeDescription">
+          Get everything out of your head and turn it into clear next steps.
+        </p>
+      </div>
+
+      <section class="workspace">
+
+        <!-- INPUT PANEL -->
+        <div class="input-card">
+
+          <!-- Compatibility with existing mode-switching JavaScript -->
+          <div class="tabs hidden">
+            <button type="button" id="planTab" class="tab active">✳ Plan</button>
+            <button type="button" id="reflectTab" class="tab">♡ Vent &amp; Reflect</button>
+          </div>
+
+          <div class="input-heading">
+            <span class="input-heading-icon">✎</span>
+            <div>
+              <h2>Your thoughts</h2>
+              <p>Type it out or tell us out loud.</p>
+            </div>
+          </div>
+
+          <div id="notice" class="notice">
+            Turn a messy to-do list into a clear, doable plan.
+          </div>
+
+          <form id="form">
+            <label id="label" for="userText">
+              What would you like to get done?
+            </label>
+
+            <textarea
+              id="userText"
+              name="text"
+              maxlength="{{ max_chars }}"
+              placeholder="For example: I have an assignment due tomorrow..."
+            ></textarea>
+
+            <div class="meta">
+              <span id="count">0 / {{ max_chars }}</span>
+              <button type="button" id="example" class="text-button">
+                Try an example ↗
+              </button>
+            </div>
+
+            <div class="voice">
+              <button type="button" id="record" class="record-button">
+                <span class="mic-icon">🎙</span>
+                <span id="recordLabel">Record voice</span>
+              </button>
+              <span id="voiceStatus">Up to 90 seconds</span>
+            </div>
+
+            <div id="audioPreview" class="audio-preview hidden">
+              <span id="audioName">Voice note ready</span>
+              <button type="button" id="removeAudio" class="text-button">
+                Remove
+              </button>
+            </div>
+
+            <input id="audioUpload" type="file" accept="audio/*" hidden>
+
+            <div class="disclaimer">
+              <span class="info-icon">ⓘ</span>
+              <span>
+                Avoid sharing sensitive personal details. Your input is sent
+                to Google Gemini; provider data policies apply.
+              </span>
+            </div>
+
+            <button id="submit" class="submit-button" type="submit">
+              <span id="submitText">Build my plan</span>
+              <span class="submit-arrow">↗</span>
+            </button>
+
+            <p id="error" class="error hidden" role="alert"></p>
+          </form>
+        </div>
+
+        <!-- RESULTS PANEL -->
+        <section class="result-card" aria-live="polite">
+
+          <div id="empty" class="empty-state">
+            <div class="illustration">
+              <div class="illustration-orb"></div>
+              <span class="illustration-spark spark-one">✦</span>
+              <span class="illustration-spark spark-two">✧</span>
+              <span class="illustration-bubble bubble-one">✓</span>
+              <span class="illustration-bubble bubble-two">♡</span>
+              <span class="illustration-bubble bubble-three">↗</span>
+            </div>
+
+            <span class="result-eyebrow">YOUR SPACE</span>
+            <h2 id="emptyTitle">Your plan starts here.</h2>
+            <p id="emptyCopy">
+              Share what's on your list and we'll help you organize it.
+            </p>
+
+            <div class="chips">
+              <span>✦ Priorities</span>
+              <span>◷ Time blocks</span>
+              <span>♡ Fresh start</span>
+            </div>
+          </div>
+
+          <div id="loading" class="loading-state hidden">
+            <div class="spinner"></div>
+            <h2 id="loadingTitle">Putting things in order…</h2>
+            <p>Give us a moment to make it useful.</p>
+          </div>
+
+          <div id="resultContent" class="result-content hidden"></div>
+
+        </section>
+      </section>
+    </section>
+
+    <footer class="footer">
+      <span>Made with ♡ for a clearer day.</span>
+      <span>FlowSpace AI · One request at a time</span>
+    </footer>
+
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
