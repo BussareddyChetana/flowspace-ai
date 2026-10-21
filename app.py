@@ -15,7 +15,7 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024
 logging.basicConfig(level=logging.INFO)
 
-MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 MAX_CHARS = 3000
 MAX_AUDIO = 4 * 1024 * 1024
 AUDIO_TYPES = {"audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg",

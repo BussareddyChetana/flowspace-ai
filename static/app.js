@@ -1,20 +1,23 @@
 
 (() => {
+  "use strict";
+
   const $ = (id) => document.getElementById(id);
 
   let mode = "plan";
   let audioBlob = null;
   let recorder = null;
-  let chunks = [];
-  let timer = null;
-  let seconds = 0;
+  let recordingTimer = null;
+  let recordingSeconds = 0;
+
+  const colors = ["pink", "blue", "purple", "orange", "green"];
 
   const examples = {
-    plan: "I have an assignment due tomorrow, need to prepare for an interview this weekend, and buy groceries. Help me organize my time.",
-    reflect: "I feel overwhelmed today. There are many things I need to do, and I am worried I will disappoint people if I cannot finish everything."
+    plan: "Python study, homework assignment, exercise, Java practice.",
+    reflect: "I feel overwhelmed by everything I need to do. I want to feel calmer and more confident."
   };
 
-  const esc = (value) =>
+  const escapeHTML = (value) =>
     String(value ?? "").replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
       "<": "&lt;",
@@ -28,24 +31,25 @@
       `${$("userText").value.length} / ${$("userText").maxLength}`;
   }
 
-  // Switch between the two modes.
-  function setMode(next) {
-    mode = next;
+  function showError(message) {
+    $("error").textContent = message;
+    $("error").classList.remove("hidden");
+  }
 
-    $("planTab").classList.toggle("active", mode === "plan");
-    $("reflectTab").classList.toggle("active", mode === "reflect");
+  function setMode(nextMode) {
+    mode = nextMode;
 
     $("notice").textContent = mode === "plan"
-      ? "Turn a messy to-do list into a clear, doable plan."
-      : "A gentle reflection space, not therapy or medical advice.";
+      ? "Turn your tasks into a clear, colorful visual timeline."
+      : "A gentle space to express your thoughts without judgment.";
 
     $("label").textContent = mode === "plan"
       ? "What would you like to get done?"
       : "What's on your mind?";
 
     $("userText").placeholder = mode === "plan"
-      ? "For example: I have an assignment due tomorrow..."
-      : "Share what you're feeling, in your own language...";
+      ? "For example: study Python, finish homework, exercise..."
+      : "Write whatever is on your mind...";
 
     $("submitText").textContent = mode === "plan"
       ? "Build my plan"
@@ -56,12 +60,12 @@
       : "A space to let it out.";
 
     $("emptyCopy").textContent = mode === "plan"
-      ? "Share what's on your list and we'll turn it into clear next steps."
-      : "Share what you're carrying. You'll receive a gentle reflection, one request at a time.";
+      ? "Share your tasks to create a colorful visual timeline."
+      : "Share your thoughts and get a gentle, supportive reflection.";
 
     $("loadingTitle").textContent = mode === "plan"
-      ? "Putting things in order…"
-      : "Taking a moment to reflect…";
+      ? "Organizing your tasks..."
+      : "Taking a moment to reflect...";
 
     $("modeEyebrow").textContent = mode === "plan"
       ? "GET ORGANIZED"
@@ -72,25 +76,21 @@
       : "Let it all out.";
 
     $("modeDescription").textContent = mode === "plan"
-      ? "Get everything out of your head and turn it into clear next steps."
-      : "Share what you're feeling. You don't need to have all the answers.";
+      ? "Turn your ideas into colorful task cards and a visual timeline."
+      : "Explore your feelings and find one gentle next step.";
 
     $("resultContent").classList.add("hidden");
     $("empty").classList.remove("hidden");
     $("loading").classList.add("hidden");
     $("error").classList.add("hidden");
-    $("submit").disabled = false;
-
     count();
   }
 
-  // FIRST SCREEN: mode selection.
   $("choosePlan").addEventListener("click", () => {
     setMode("plan");
     $("welcomeScreen").classList.add("hidden");
     $("appScreen").classList.remove("hidden");
     window.scrollTo({ top: 0, behavior: "smooth" });
-    $("userText").focus();
   });
 
   $("chooseReflect").addEventListener("click", () => {
@@ -98,17 +98,14 @@
     $("welcomeScreen").classList.add("hidden");
     $("appScreen").classList.remove("hidden");
     window.scrollTo({ top: 0, behavior: "smooth" });
-    $("userText").focus();
   });
 
   $("backHome").addEventListener("click", () => {
     $("appScreen").classList.add("hidden");
     $("welcomeScreen").classList.remove("hidden");
-    $("error").classList.add("hidden");
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
-  // Compatibility with the hidden mode tabs.
   $("planTab").addEventListener("click", () => setMode("plan"));
   $("reflectTab").addEventListener("click", () => setMode("reflect"));
 
@@ -119,66 +116,428 @@
 
   $("userText").addEventListener("input", count);
 
-  function showError(message) {
-    $("error").textContent = message;
-    $("error").classList.remove("hidden");
+  function priorityOf(task) {
+    const priority = String(task.priority || "medium").toLowerCase();
+    return ["high", "medium", "low"].includes(priority)
+      ? priority
+      : "medium";
   }
 
+  function durationOf(task) {
+    const duration = Number(task.duration_min);
+    return Number.isFinite(duration) && duration > 0 ? duration : 30;
+  }
+
+  function download(filename, content, type) {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function copyText(value) {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      showError("Copy failed. Please select and copy the text manually.");
+    }
+  }
+
+  function planMarkdown(data) {
+    const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+
+    return `# FlowSpace AI Plan
+
+${data.summary || ""}
+
+${tasks.map((task) =>
+  `- [ ] ${task.title || "Untitled task"} — ${priorityOf(task)} priority, ${durationOf(task)} minutes` +
+  (task.note ? `\n  ${task.note}` : "")
+).join("\n")}
+`;
+  }
+
+  function transcriptHTML(data) {
+    if (!data.transcript) return "";
+
+    return `
+      <details class="transcript">
+        <summary>What I heard</summary>
+        <p>${escapeHTML(data.transcript)}</p>
+      </details>
+    `;
+  }
+
+  function priorityHTML(task) {
+    const priority = priorityOf(task);
+
+    return `<span class="priority-badge ${priority}">${priority.toUpperCase()}</span>`;
+  }
+
+  // Each task appears once, as a colorful card.
+  function taskCards(tasks) {
+    return tasks.map((task, index) => {
+      const color = colors[index % colors.length];
+      const priority = priorityOf(task);
+
+      return `
+        <article class="color-task-card ${color} priority-${priority}">
+          <div class="color-task-top">
+            <span class="color-task-number">${String(index + 1).padStart(2, "0")}</span>
+            ${priorityHTML(task)}
+          </div>
+
+          <h3>${escapeHTML(task.title || "Untitled task")}</h3>
+
+          ${task.note
+            ? `<p>${escapeHTML(task.note)}</p>`
+            : `<p class="task-placeholder">One step at a time.</p>`}
+
+          <div class="color-task-footer">
+            <span>◷ ${durationOf(task)} min</span>
+            <span>${priority === "high" ? "★ Focus first" :
+              priority === "medium" ? "✦ Keep moving" : "♡ When ready"}</span>
+          </div>
+        </article>
+      `;
+    }).join("");
+  }
+
+  // One visual timeline. No calendar and no fixed clock times.
+  function timelineHTML(tasks) {
+    if (!tasks.length) {
+      return `<div class="visual-empty">Your timeline will appear here when tasks are available.</div>`;
+    }
+
+    const total = tasks.reduce((sum, task) => sum + durationOf(task), 0);
+    let elapsed = 0;
+
+    const bars = tasks.map((task, index) => {
+      const duration = durationOf(task);
+      const left = total ? (elapsed / total) * 100 : 0;
+      const width = total ? (duration / total) * 100 : 100;
+      const color = colors[index % colors.length];
+
+      elapsed += duration;
+
+      return `
+        <div class="visual-timeline-item ${color}"
+             style="--timeline-left:${left}%;--timeline-width:${width}%"
+             title="${escapeHTML(task.title)} — ${duration} minutes">
+          <span class="timeline-marker">${index + 1}</span>
+          <span class="timeline-task-name">${escapeHTML(task.title || "Task")}</span>
+          <span class="timeline-task-duration">${duration} min</span>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <section class="visual-timeline">
+        <div class="visual-timeline-heading">
+          <div>
+            <span class="visual-eyebrow">YOUR FLOW</span>
+            <h3>Your task timeline</h3>
+            <p>A visual overview of your planned work.</p>
+          </div>
+          <span class="timeline-total">${Math.round(total / 60 * 10) / 10} hrs</span>
+        </div>
+
+        <div class="timeline-track">${bars}</div>
+        <p class="timeline-caption">${tasks.length} tasks · ${total} minutes in total</p>
+      </section>
+    `;
+  }
+
+  function renderPlan(data) {
+    const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+
+    $("resultContent").innerHTML = `
+      <div class="results-header">
+        <div>
+          <span class="visual-eyebrow">YOUR PLAN IS READY</span>
+          <h2>Look what you can accomplish ✨</h2>
+          <p>Your tasks, organized into one colorful view.</p>
+        </div>
+        <button type="button" class="export-button" id="copyPlan">Copy plan</button>
+      </div>
+
+      ${data.summary
+        ? `<div class="plan-summary-card"><span>✦</span><p>${escapeHTML(data.summary)}</p></div>`
+        : ""}
+
+      ${transcriptHTML(data)}
+
+      <div class="plan-overview">
+        <div class="overview-card overview-pink">
+          <span class="overview-icon">✿</span>
+          <strong>${tasks.length}</strong>
+          <span>Total tasks</span>
+        </div>
+        <div class="overview-card overview-blue">
+          <span class="overview-icon">⚡</span>
+          <strong>${tasks.filter(t => priorityOf(t) === "high").length}</strong>
+          <span>High priority</span>
+        </div>
+        <div class="overview-card overview-purple">
+          <span class="overview-icon">◷</span>
+          <strong>${Math.round(tasks.reduce((sum, t) => sum + durationOf(t), 0) / 60 * 10) / 10}h</strong>
+          <span>Estimated effort</span>
+        </div>
+      </div>
+
+      <section class="color-task-section">
+        <div class="color-section-heading">
+          <div>
+            <span class="visual-eyebrow">YOUR TASKS</span>
+            <h3>Every step counts</h3>
+          </div>
+          <span class="task-count-pill">${tasks.length} tasks</span>
+        </div>
+
+        <div class="color-task-grid">
+          ${tasks.length
+            ? taskCards(tasks)
+            : `<div class="visual-empty">No tasks were returned. Try describing your tasks in more detail.</div>`}
+        </div>
+      </section>
+
+      ${timelineHTML(tasks)}
+
+      <div class="export-toolbar">
+        <button type="button" class="export-button" id="csv">Download CSV</button>
+        <button type="button" class="export-button" id="md">Download Markdown</button>
+        <button type="button" class="export-button" id="ics">Calendar (.ics)</button>
+        <button type="button" class="export-button" id="print">Print / Save PDF</button>
+      </div>
+
+      <button type="button" class="export-button" id="toReflect">♡ Reflect on my plan</button>
+    `;
+
+    $("copyPlan").addEventListener("click", () => copyText(planMarkdown(data)));
+
+    $("md").addEventListener("click", () => {
+      download("flowspace-plan.md", planMarkdown(data), "text/markdown;charset=utf-8");
+    });
+
+    $("csv").addEventListener("click", () => {
+      const quote = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+      const rows = [
+        ["Task", "Priority", "Duration (minutes)", "Note"],
+        ...tasks.map(task => [
+          task.title,
+          priorityOf(task),
+          durationOf(task),
+          task.note
+        ])
+      ];
+
+      download(
+        "flowspace-plan.csv",
+        rows.map(row => row.map(quote).join(",")).join("\r\n"),
+        "text/csv;charset=utf-8"
+      );
+    });
+
+    $("ics").addEventListener("click", () => {
+      const escapeICS = (value) => String(value || "")
+        .replace(/\\/g, "\\\\")
+        .replace(/,/g, "\\,")
+        .replace(/;/g, "\\;")
+        .replace(/\n/g, "\\n");
+
+      const events = tasks.filter(task =>
+        task.date &&
+        /^\d{4}-\d{2}-\d{2}$/.test(task.date) &&
+        task.start &&
+        /^\d{1,2}:\d{2}$/.test(task.start)
+      );
+
+      if (!events.length) {
+        showError("No tasks have both a date and a start time. The other exports are still available.");
+        return;
+      }
+
+      const pad = number => String(number).padStart(2, "0");
+      const stamp = date =>
+        `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
+
+      const calendarEvents = events.map(task => {
+        const [year, month, day] = task.date.split("-").map(Number);
+        const [hour, minute] = task.start.split(":").map(Number);
+        const start = new Date(year, month - 1, day, hour, minute);
+        const end = new Date(start.getTime() + durationOf(task) * 60000);
+
+        return [
+          "BEGIN:VEVENT",
+          `UID:${Date.now()}-${Math.random().toString(36).slice(2)}@flowspaceai`,
+          `DTSTART:${stamp(start)}`,
+          `DTEND:${stamp(end)}`,
+          `SUMMARY:${escapeICS(task.title)}`,
+          `DESCRIPTION:${escapeICS(task.note)}`,
+          "END:VEVENT"
+        ].join("\r\n");
+      });
+
+      download(
+        "flowspace-plan.ics",
+        ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//FlowSpaceAI//EN",
+          ...calendarEvents, "END:VCALENDAR"].join("\r\n"),
+        "text/calendar;charset=utf-8"
+      );
+    });
+
+    $("print").addEventListener("click", () => window.print());
+
+    $("toReflect").addEventListener("click", () => {
+      setMode("reflect");
+      $("userText").value = `I made a plan with these tasks: ${tasks.map(t => t.title).join(", ")}. Help me reflect on how I feel about it.`;
+      count();
+      $("userText").focus();
+    });
+  }
+
+  function renderReflect(data) {
+    if (data.crisis) {
+      $("resultContent").innerHTML = `
+        <section class="reflect-card reflect-pink">
+          <span class="visual-eyebrow">SUPPORT MATTERS</span>
+          <h2>You don't have to face this alone.</h2>
+          <p>${escapeHTML(data.message || "Please reach out to someone you trust or local emergency services if you are in immediate danger.")}</p>
+          ${(data.helplines || []).map(line => `
+            <div class="reflect-detail-card">
+              <h3>${escapeHTML(line.name)}</h3>
+              <p>${escapeHTML(line.contact)}</p>
+            </div>
+          `).join("")}
+        </section>
+        ${transcriptHTML(data)}
+      `;
+      return;
+    }
+
+    const feelings = Array.isArray(data.feelings)
+      ? data.feelings
+      : [];
+
+    const cards = [
+      {
+        color: "reflect-pink",
+        icon: "♡",
+        title: "What I hear",
+        text: data.reflection
+      },
+      {
+        color: "reflect-blue",
+        icon: "✦",
+        title: "A gentle reframe",
+        text: data.reframe
+      },
+      {
+        color: "reflect-green",
+        icon: "🌱",
+        title: "One small next step",
+        text: data.next_step
+      }
+    ].filter(card => card.text);
+
+    $("resultContent").innerHTML = `
+      <div class="results-header">
+        <div>
+          <span class="visual-eyebrow">A MOMENT FOR YOU</span>
+          <h2>Thank you for sharing 💗</h2>
+          <p>Take what feels helpful and leave the rest.</p>
+        </div>
+        <button type="button" class="export-button" id="copyReflect">Copy reflection</button>
+      </div>
+
+      ${transcriptHTML(data)}
+
+      ${feelings.length ? `
+        <section class="feelings-panel">
+          <span class="visual-eyebrow">FEELINGS I HEARD</span>
+          <div class="feelings-chips">
+            ${feelings.map((feeling, index) => `
+              <span class="feeling-chip ${colors[index % colors.length]}">${escapeHTML(feeling)}</span>
+            `).join("")}
+          </div>
+        </section>
+      ` : ""}
+
+      <div class="reflect-card-grid">
+        ${cards.map((card, index) => `
+          <article class="reflect-card ${card.color}">
+            <div class="reflect-card-icon">${card.icon}</div>
+            <span class="reflect-card-number">0${index + 1}</span>
+            <h3>${escapeHTML(card.title)}</h3>
+            <p>${escapeHTML(card.text)}</p>
+          </article>
+        `).join("")}
+      </div>
+
+      <div class="gentle-note">♡ You don't need to solve everything right now. One small step is enough.</div>
+
+      <button type="button" class="export-button" id="turnPlan">✦ Turn this into a plan</button>
+    `;
+
+    $("copyReflect").addEventListener("click", () => {
+      copyText(cards.map(card => `${card.title}\n${card.text}`).join("\n\n"));
+    });
+
+    $("turnPlan").addEventListener("click", () => {
+      const text = data.transcript || data.reflection || "";
+      setMode("plan");
+      $("userText").value = text;
+      count();
+      $("userText").focus();
+    });
+  }
+
+  // Voice recording.
   function clearAudio() {
     audioBlob = null;
     $("audioPreview").classList.add("hidden");
     $("audioUpload").value = "";
-    $("voiceStatus").textContent = "Up to 90 seconds";
     $("recordLabel").textContent = "Record voice";
-    $("record").classList.remove("recording");
+    $("voiceStatus").textContent = "Up to 90 seconds";
+    $("record").classList.remove("recording", "is-recording");
   }
 
   $("removeAudio").addEventListener("click", clearAudio);
 
-  // Voice recording.
   $("record").addEventListener("click", async () => {
     if (recorder && recorder.state === "recording") {
       recorder.stop();
       return;
     }
 
-    if (
-      !navigator.mediaDevices?.getUserMedia ||
-      !window.MediaRecorder
-    ) {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       $("audioUpload").click();
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
+        .find(type => MediaRecorder.isTypeSupported(type));
 
-      const type = [
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/mp4"
-      ].find((format) => MediaRecorder.isTypeSupported(format));
-
-      recorder = type
-        ? new MediaRecorder(stream, { mimeType: type })
+      recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream);
 
-      chunks = [];
-      seconds = 0;
+      const chunks = [];
+      recordingSeconds = 0;
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size) {
-          chunks.push(event.data);
-        }
+      recorder.ondataavailable = event => {
+        if (event.data.size) chunks.push(event.data);
       };
 
       recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-
-        clearInterval(timer);
-        timer = null;
+        stream.getTracks().forEach(track => track.stop());
+        clearInterval(recordingTimer);
 
         audioBlob = new Blob(chunks, {
           type: recorder.mimeType || "audio/webm"
@@ -186,36 +545,31 @@
 
         if (audioBlob.size > 4 * 1024 * 1024) {
           clearAudio();
-          showError("Recording is too large. Try a shorter note.");
+          showError("The recording is too large. Please record a shorter note.");
           return;
         }
 
-        $("audioName").textContent = `Voice note ready (${seconds}s)`;
+        $("audioName").textContent = `Voice note ready (${recordingSeconds}s)`;
         $("audioPreview").classList.remove("hidden");
-        $("record").classList.remove("recording");
         $("recordLabel").textContent = "Record again";
+        $("record").classList.remove("recording", "is-recording");
         $("voiceStatus").textContent = "Ready to submit";
       };
 
       recorder.start();
-
       $("record").classList.add("recording");
       $("recordLabel").textContent = "Stop recording";
-      $("voiceStatus").textContent = "Recording… 0s / 90s";
 
-      timer = setInterval(() => {
-        seconds++;
-        $("voiceStatus").textContent =
-          `Recording… ${seconds}s / 90s`;
+      recordingTimer = setInterval(() => {
+        recordingSeconds++;
+        $("voiceStatus").textContent = `Recording... ${recordingSeconds}s / 90s`;
 
-        if (seconds >= 90 && recorder.state === "recording") {
+        if (recordingSeconds >= 90 && recorder.state === "recording") {
           recorder.stop();
         }
       }, 1000);
-
-    } catch (error) {
-      $("voiceStatus").textContent =
-        "Microphone unavailable. Upload audio instead.";
+    } catch {
+      $("voiceStatus").textContent = "Microphone unavailable. Upload audio instead.";
       $("audioUpload").click();
     }
   });
@@ -236,377 +590,37 @@
     $("voiceStatus").textContent = "Ready to submit";
   });
 
-  // Export helpers.
-  function markdown(data) {
-    return `# FlowSpace AI Plan
-
-${data.summary || ""}
-
-${(data.tasks || []).map((task) =>
-  `- [ ] **${task.title}** — ${task.priority || "medium"} priority` +
-  `${task.date ? "; " + task.date : ""}` +
-  `${task.start ? " at " + task.start : ""}` +
-  `; ${task.duration_min || 30} min` +
-  `${task.note ? "\n  - " + task.note : ""}`
-).join("\n")}
-`;
-  }
-
-  function download(filename, content, type) {
-    const url = URL.createObjectURL(
-      new Blob([content], { type })
-    );
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  async function copyText(value) {
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch (error) {
-      showError("Copy failed. You can select the result text manually.");
-    }
-  }
-
-  function actionButton(label, id) {
-    return `<button type="button" class="small-btn" id="${id}">${label}</button>`;
-  }
-
-  function transcript(value) {
-    return value
-      ? `<details class="transcript">
-           <summary>What I heard</summary>
-           <p>${esc(value)}</p>
-         </details>`
-      : "";
-  }
-
-  // Render the plan.
-  function renderPlan(data) {
-    const tasks = data.tasks || [];
-
-    const highPriority = tasks.filter(
-      (task) => task.priority === "high"
-    ).length;
-
-    const minutes = tasks.reduce(
-      (total, task) => total + (+task.duration_min || 0),
-      0
-    );
-
-    const cards = tasks.map((task, index) => `
-      <article class="task">
-        <span class="stripe ${esc(task.priority || "medium")}"></span>
-        <div>
-          <p class="task-title">${index + 1}. ${esc(task.title)}</p>
-          ${task.note
-            ? `<p class="task-note">${esc(task.note)}</p>`
-            : ""}
-          <div class="tags">
-            <span class="tag ${esc(task.priority || "medium")}">
-              ${esc((task.priority || "medium").toUpperCase())}
-            </span>
-            ${task.date
-              ? `<span class="tag">${esc(task.date)}${task.start
-                  ? " · " + esc(task.start)
-                  : ""}</span>`
-              : ""}
-            <span class="tag">${+task.duration_min || 30} min</span>
-          </div>
-        </div>
-      </article>
-    `).join("");
-
-    $("resultContent").innerHTML = `
-      <div class="result-head">
-        <div>
-          <div class="kicker">YOUR PLAN</div>
-          <h2>One step at a time.</h2>
-        </div>
-        ${actionButton("Copy plan", "copyPlan")}
-      </div>
-
-      ${data.summary
-        ? `<p class="summary">${esc(data.summary)}</p>`
-        : ""}
-
-      <div class="stats">
-        <div class="stat">
-          <strong>${tasks.length}</strong>
-          <span>Tasks</span>
-        </div>
-        <div class="stat">
-          <strong>${highPriority}</strong>
-          <span>High priority</span>
-        </div>
-        <div class="stat">
-          <strong>${Math.round(minutes / 60 * 10) / 10}h</strong>
-          <span>Estimated time</span>
-        </div>
-      </div>
-
-      ${transcript(data.transcript)}
-
-      <div class="tasks">
-        ${cards || "<p>No clear action items found. Try adding a specific task.</p>"}
-      </div>
-
-      <div class="exports">
-        ${actionButton("Download CSV", "csv")}
-        ${actionButton("Download Markdown", "md")}
-        ${actionButton("Calendar (.ics)", "ics")}
-        ${actionButton("Print / PDF", "print")}
-      </div>
-
-      <button type="button" class="bridge" id="toReflect">
-        ♡ Reflect on this plan instead ↗
-      </button>
-    `;
-
-    $("copyPlan").addEventListener("click", () =>
-      copyText(markdown(data))
-    );
-
-    $("md").addEventListener("click", () => {
-      download(
-        "flowspace-plan.md",
-        markdown(data),
-        "text/markdown;charset=utf-8"
-      );
-    });
-
-    $("csv").addEventListener("click", () => {
-      const quote = (value) =>
-        `"${String(value ?? "").replace(/"/g, '""')}"`;
-
-      const rows = [
-        ["Task", "Priority", "Date", "Start", "Duration (min)", "Note"],
-        ...tasks.map((task) => [
-          task.title,
-          task.priority,
-          task.date,
-          task.start,
-          task.duration_min,
-          task.note
-        ])
-      ];
-
-      const csv = rows
-        .map((row) => row.map(quote).join(","))
-        .join("\r\n");
-
-      download(
-        "flowspace-plan.csv",
-        csv,
-        "text/csv;charset=utf-8"
-      );
-    });
-
-    $("ics").addEventListener("click", () => {
-      const escapeICS = (value) =>
-        String(value || "")
-          .replace(/\\/g, "\\\\")
-          .replace(/,/g, "\\,")
-          .replace(/;/g, "\\;")
-          .replace(/\n/g, "\\n");
-
-      const events = tasks
-        .filter((task) => task.date && task.start)
-        .map((task) => {
-          const startDate = task.date.replace(/-/g, "");
-          const startTime = task.start.replace(":", "") + "00";
-          const start = `${startDate}T${startTime}`;
-
-          const endDate = new Date(
-            `${task.date}T${task.start}:00`
-          );
-
-          endDate.setMinutes(
-            endDate.getMinutes() + (+task.duration_min || 30)
-          );
-
-          const pad = (number) => String(number).padStart(2, "0");
-
-          const end =
-            `${endDate.getFullYear()}` +
-            `${pad(endDate.getMonth() + 1)}` +
-            `${pad(endDate.getDate())}T` +
-            `${pad(endDate.getHours())}` +
-            `${pad(endDate.getMinutes())}00`;
-
-          return [
-            "BEGIN:VEVENT",
-            `UID:${crypto.randomUUID()}@flowspaceai`,
-            `DTSTART:${start}`,
-            `DTEND:${end}`,
-            `SUMMARY:${escapeICS(task.title)}`,
-            "END:VEVENT"
-          ].join("\r\n");
-        });
-
-      const calendar = [
-        "BEGIN:VCALENDAR",
-        "VERSION:2.0",
-        "PRODID:-//FlowSpaceAI//EN",
-        ...events,
-        "END:VCALENDAR"
-      ].join("\r\n");
-
-      download(
-        "flowspace-plan.ics",
-        calendar,
-        "text/calendar;charset=utf-8"
-      );
-    });
-
-    $("print").addEventListener("click", () => window.print());
-
-    $("toReflect").addEventListener("click", () => {
-      setMode("reflect");
-
-      const items = tasks
-        .map((task) => task.title)
-        .filter(Boolean);
-
-      $("userText").value =
-        `I made this plan: ${items.join(", ")}. ` +
-        "Help me reflect on how I feel about it and how to approach it without feeling overwhelmed.";
-
-      count();
-      $("userText").focus();
-    });
-  }
-
-  // Render the reflection.
-  function renderReflect(data) {
-    if (data.crisis) {
-      $("resultContent").innerHTML = `
-        <div class="crisis">
-          <div class="kicker">SUPPORT MATTERS</div>
-          <h2>You don't have to handle this alone.</h2>
-          <p>${esc(data.message ||
-            "Please contact someone you trust or emergency services if you are in danger.")}</p>
-          ${(data.helplines || []).map((line) => `
-            <div class="helpline">
-              <strong>${esc(line.name)}</strong>
-              ${esc(line.contact)}
-            </div>
-          `).join("")}
-        </div>
-        ${transcript(data.transcript)}
-      `;
-      return;
-    }
-
-    const feelings = (data.feelings || [])
-      .map((feeling) =>
-        `<span class="feeling">${esc(feeling)}</span>`
-      )
-      .join("");
-
-    $("resultContent").innerHTML = `
-      <div class="result-head">
-        <div>
-          <div class="kicker">VENT & REFLECT</div>
-          <h2>Thank you for sharing.</h2>
-        </div>
-        ${actionButton("Copy reflection", "copyReflect")}
-      </div>
-
-      ${transcript(data.transcript)}
-
-      <div class="feelings">${feelings}</div>
-
-      <div class="block">
-        <h3>♡ What I hear</h3>
-        <p>${esc(data.reflection || "")}</p>
-      </div>
-
-      ${data.reframe ? `
-        <div class="block">
-          <h3>✦ A gentle reframe</h3>
-          <p>${esc(data.reframe)}</p>
-        </div>
-      ` : ""}
-
-      ${data.next_step ? `
-        <div class="block">
-          <h3>→ One small next step</h3>
-          <p>${esc(data.next_step)}</p>
-        </div>
-      ` : ""}
-
-      <button type="button" class="bridge" id="turnPlan">
-        ✳ Turn this into a plan ↗
-      </button>
-    `;
-
-    $("copyReflect").addEventListener("click", () => {
-      copyText([
-        data.reflection,
-        data.reframe,
-        data.next_step
-      ].filter(Boolean).join("\n\n"));
-    });
-
-    $("turnPlan").addEventListener("click", () => {
-      const previousText = $("userText").value;
-      setMode("plan");
-
-      $("userText").value =
-        data.transcript || previousText;
-
-      count();
-      $("userText").focus();
-    });
-  }
-
-  // Submit input to the existing Flask API.
-  $("form").addEventListener("submit", async (event) => {
+  // Submit to the existing Flask API.
+  $("form").addEventListener("submit", async event => {
     event.preventDefault();
-
     $("error").classList.add("hidden");
 
-    const value = $("userText").value.trim();
+    const text = $("userText").value.trim();
 
-    if (!value && !audioBlob) {
-      showError("Type something or record a voice note first.");
+    if (!text && !audioBlob) {
+      showError("Please type something or record a voice note first.");
       return;
     }
 
     const formData = new FormData();
-
-    formData.append("text", value);
+    formData.append("text", text);
     formData.append(
       "timezone",
       Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
     );
 
     if (audioBlob) {
-      const type = audioBlob.type || "";
-
-      const extension = type.includes("wav")
-        ? "wav"
-        : type.includes("mp4")
-          ? "m4a"
-          : type.includes("mpeg")
-            ? "mp3"
-            : type.includes("ogg")
-              ? "ogg"
-              : "webm";
+      const extension = audioBlob.type.includes("wav") ? "wav"
+        : audioBlob.type.includes("mp4") ? "m4a"
+        : audioBlob.type.includes("mpeg") ? "mp3"
+        : audioBlob.type.includes("ogg") ? "ogg"
+        : "webm";
 
       formData.append("audio", audioBlob, `voice-note.${extension}`);
     }
 
     $("submit").disabled = true;
-    $("submitText").textContent = "Working…";
+    $("submitText").textContent = "Working...";
     $("empty").classList.add("hidden");
     $("resultContent").classList.add("hidden");
     $("loading").classList.remove("hidden");
@@ -614,10 +628,7 @@ ${(data.tasks || []).map((task) =>
     try {
       const response = await fetch(
         mode === "plan" ? "/api/plan" : "/api/reflect",
-        {
-          method: "POST",
-          body: formData
-        }
+        { method: "POST", body: formData }
       );
 
       const data = await response.json();
@@ -634,15 +645,10 @@ ${(data.tasks || []).map((task) =>
 
       $("loading").classList.add("hidden");
       $("resultContent").classList.remove("hidden");
-
     } catch (error) {
       $("loading").classList.add("hidden");
       $("empty").classList.remove("hidden");
-
-      showError(
-        error.message || "Could not reach Gemini. Please try again."
-      );
-
+      showError(error.message || "Could not reach the server. Please try again.");
     } finally {
       $("submit").disabled = false;
       $("submitText").textContent = mode === "plan"
@@ -651,9 +657,7 @@ ${(data.tasks || []).map((task) =>
     }
   });
 
-  // Start with the welcome screen visible.
   $("welcomeScreen").classList.remove("hidden");
   $("appScreen").classList.add("hidden");
-
   count();
 })();

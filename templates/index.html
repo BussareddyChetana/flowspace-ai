@@ -25,7 +25,7 @@
 
   <main class="shell">
 
-    <!-- FIRST SCREEN: CHOOSE YOUR MODE -->
+    <!-- WELCOME SCREEN -->
     <section id="welcomeScreen" class="welcome-screen">
       <div class="welcome-badge">
         <span>✦</span> YOUR PERSONAL AI SPACE
@@ -48,8 +48,8 @@
           <span class="mode-label">GET ORGANIZED</span>
           <span class="mode-title">Plan my day</span>
           <span class="mode-description">
-            Turn your messy thoughts, tasks and deadlines into a clear,
-            prioritized plan you can actually follow.
+            Turn your tasks and deadlines into a colorful timeline and
+            interactive calendar.
           </span>
           <span class="mode-action">
             Let's plan <span class="action-arrow">↗</span>
@@ -62,7 +62,7 @@
           <span class="mode-label">TAKE A BREATH</span>
           <span class="mode-title">Vent &amp; Reflect</span>
           <span class="mode-description">
-            Get things off your chest, understand your feelings and find
+            Express your thoughts, explore your feelings and find
             one gentle next step without judgment.
           </span>
           <span class="mode-action">
@@ -76,17 +76,17 @@
       <div class="welcome-footer">
         <span>♡ No pressure.</span>
         <span>✦ No judgment.</span>
-        <span>☁ Just one step at a time.</span>
+        <span>☁ One step at a time.</span>
       </div>
 
       <div class="welcome-note">
         <span>🔒</span>
-        <span>Your requests are not saved in an app history. Your input is sent
+        <span>Your requests aren't saved in an app history. Your input is sent
           to Google Gemini to generate a response.</span>
       </div>
     </section>
 
-    <!-- SECOND SCREEN: THE CHOSEN WORKSPACE -->
+    <!-- WORKSPACE -->
     <section id="appScreen" class="app-screen hidden">
 
       <button type="button" id="backHome" class="back-button">
@@ -106,7 +106,6 @@
         <!-- INPUT PANEL -->
         <div class="input-card">
 
-          <!-- Compatibility with existing mode-switching JavaScript -->
           <div class="tabs hidden">
             <button type="button" id="planTab" class="tab active">✳ Plan</button>
             <button type="button" id="reflectTab" class="tab">♡ Vent &amp; Reflect</button>
@@ -209,6 +208,7 @@
             <p>Give us a moment to make it useful.</p>
           </div>
 
+          <!-- app.js renders plan, calendar, timeline and downloads here -->
           <div id="resultContent" class="result-content hidden"></div>
 
         </section>
