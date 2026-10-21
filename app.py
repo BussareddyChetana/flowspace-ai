@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -150,33 +151,84 @@ def clean_reflection(data):
             "reflection": reflection, "reframe": str(data.get("reframe", "")).strip()[:400],
             "next_step": str(data.get("next_step", "")).strip()[:300]}
 
+
 def handle(mode):
     text = audio = None
+
     try:
         text, audio, mime = read_input()
+
         if mode == "reflect" and text and CRISIS_RE.search(text):
             return jsonify(CRISIS)
-        data = ask_model(PLAN_PROMPT if mode == "plan" else REFLECT_PROMPT, text, audio, mime)
-        return jsonify(clean_plan(data) if mode == "plan" else clean_reflection(data))
+
+        data = ask_model(
+            PLAN_PROMPT if mode == "plan" else REFLECT_PROMPT,
+            text,
+            audio,
+            mime
+        )
+
+        return jsonify(
+            clean_plan(data) if mode == "plan"
+            else clean_reflection(data)
+        )
+
     except ValueError as exc:
-        if str(exc) in {"empty_ai_response", "invalid_ai_response", "empty_reflection"} or isinstance(exc, json.JSONDecodeError):
-            return jsonify(error="The AI response was unreadable. Please try again."), 502
+        if str(exc) in {
+            "empty_ai_response",
+            "invalid_ai_response",
+            "empty_reflection"
+        } or isinstance(exc, json.JSONDecodeError):
+            return jsonify(
+                error="The AI response was unreadable. Please try again."
+            ), 502
+
         return jsonify(error=str(exc)), 400
+
     except RuntimeError as exc:
         if str(exc) == "missing_key":
-            return jsonify(error="GEMINI_API_KEY is missing. Add it to your .env file."), 500
+            traceback.print_exc()
+            return jsonify(
+                error="GEMINI_API_KEY is missing. Check Render Environment."
+            ), 500
+
+        traceback.print_exc()
         return jsonify(error="AI service configuration error."), 500
+
     except Exception as exc:
+        traceback.print_exc()
+
         message = str(exc).upper()
-        logging.error("Gemini request failed (%s)", type(exc).__name__)
+        logging.error(
+            "Gemini request failed (%s): %s",
+            type(exc).__name__,
+            str(exc)
+        )
+
         if "429" in message or "RESOURCE_EXHAUSTED" in message:
-            return jsonify(error="Gemini quota or rate limit reached. Wait and try again."), 429
-        if "API_KEY_INVALID" in message or "PERMISSION_DENIED" in message or "401" in message:
-            return jsonify(error="Gemini rejected the API key or model access. Check your .env file and model name."), 502
-        return jsonify(error="Could not reach Gemini. Check your internet, API key, model name, and terminal output."), 502
+            return jsonify(
+                error="Gemini quota or rate limit reached. Wait and try again."
+            ), 429
+
+        if (
+            "API_KEY_INVALID" in message
+            or "PERMISSION_DENIED" in message
+            or "401" in message
+        ):
+            return jsonify(
+                error="Gemini rejected the API key or model access. "
+                      "Check Render Environment and the model name."
+            ), 502
+
+        return jsonify(
+            error="Could not reach Gemini. Check the Render logs "
+                  "for the detailed error."
+        ), 502
+
     finally:
         text = None
         audio = None
+
 
 @app.after_request
 def privacy_headers(response):
